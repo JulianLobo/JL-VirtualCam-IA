@@ -6,7 +6,53 @@ import time
 import keyboard
 from ultralytics import YOLO
 
-CAMARA_INDEX = 1
+def listar_camaras_disponibles():
+    """Prueba índices de cámara y devuelve una lista con las disponibles."""
+    camaras = []
+    print("Buscando cámaras conectadas al sistema...")
+    # Probamos los primeros 5 índices posibles
+    for index in range(5):
+        cap_test = cv2.VideoCapture(index, cv2.CAP_DSHOW)
+        if cap_test.isOpened():
+            ret, _ = cap_test.read()
+            if ret:
+                camaras.append(index)
+            cap_test.release()
+    return camaras
+
+def seleccionar_camara():
+    """Muestra un menú para que el usuario elija la cámara."""
+    camaras = listar_camaras_disponibles()
+    
+    if not camaras:
+        print("❌ Error: No se detectó ninguna cámara conectada.")
+        input("Presiona Enter para salir...")
+        exit()
+        
+    if len(camaras) == 1:
+        print(f"✔️ Se detectó 1 cámara (Índice {camaras[0]}). Seleccionada automáticamente.\n")
+        time.sleep(1)
+        return camaras[0]
+        
+    print("\n=====================================================")
+    print("        CÁMARAS DETECTADAS EN EL SISTEMA             ")
+    print("=====================================================")
+    for idx in camaras:
+        print(f"  [ {idx} ] -> Cámara Índice {idx}")
+    print("=====================================================")
+    
+    while True:
+        try:
+            opcion = int(input("Selecciona el número de la cámara que deseas usar: "))
+            if opcion in camaras:
+                return opcion
+            else:
+                print("Opción no válida. Elige un número de la lista.")
+        except ValueError:
+            print("Por favor, ingresa un número válido.")
+
+# Selección dinámica de la cámara
+CAMARA_INDEX = seleccionar_camara()
 
 # Cargar modelo YOLOv8
 model = YOLO("yolov8n-seg.pt")
@@ -23,11 +69,10 @@ blur_percent = 50
 show_preview = True  
 last_key_time = 0
 
-def mostrar_interfaz(nivel, vista_previa):
+def mostrar_interfaz(nivel, vista_previa, idx_camara):
     """Limpia la terminal y muestra un panel interactivo ordenado."""
     os.system('cls' if os.name == 'nt' else 'clear')
     
-    # Barra visual del nivel de desenfoque
     bloques = int(nivel / 10)
     barra = "█" * bloques + "░" * (10 - bloques)
     
@@ -36,6 +81,7 @@ def mostrar_interfaz(nivel, vista_previa):
     print("=====================================================")
     print("        JL-VirtualCam-IA | PANEL DE CONTROL          ")
     print("=====================================================")
+    print(f" CÁMARA ACTIVA:      Índice {idx_camara}")
     print(f" NIVEL DE DESENFOQUE: [{barra}] {nivel}%")
     print(f" VISTA PREVIA:       {estado_vista}")
     print("-----------------------------------------------------")
@@ -47,7 +93,7 @@ def mostrar_interfaz(nivel, vista_previa):
     print("=====================================================")
 
 # Imprimir la interfaz inicial
-mostrar_interfaz(blur_percent, show_preview)
+mostrar_interfaz(blur_percent, show_preview, CAMARA_INDEX)
 
 NOMBRE_VENTANA = "JL-VirtualCam-IA (Controles)"
 
@@ -89,7 +135,7 @@ try:
             # Transmitir a la Cámara Virtual
             cam.send(final_output)
 
-            # CONTROL DE TECLAS CON ACTUALIZACIÓN DE INTERFAZ
+            # CONTROL DE TECLAS
             current_time = time.time()
             if current_time - last_key_time > 0.2:
                 hubo_cambio = False
@@ -111,11 +157,10 @@ try:
                     hubo_cambio = True
                     last_key_time = current_time
 
-                # Solo refrescar la pantalla si el usuario interactuó
                 if hubo_cambio:
-                    mostrar_interfaz(blur_percent, show_preview)
+                    mostrar_interfaz(blur_percent, show_preview, CAMARA_INDEX)
 
-            # GESTIÓN DE LA VENTANA DE VISTA PREVIA
+            # VISTA PREVIA
             if show_preview:
                 preview_frame = final_output.copy()
                 cv2.putText(preview_frame, f"Desenfoque: {blur_percent}%", (10, 30),
