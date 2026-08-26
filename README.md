@@ -10,7 +10,7 @@ Filtro inteligente de desenfoque de fondo en tiempo real para OBS Studio utiliza
 * **Filtro inteligente de sujeto:** Calcula el área ocupada y prioriza automáticamente a la persona en primer plano (ideal para entornos compartidos u oficinas).
 * **Integración con OBS:** Emite directamente a la **OBS Virtual Camera** sin requerir configuraciones complejas dentro del software de transmisión.
 * **Control de FPS:** Optimizado a 30 FPS para no saturar el rendimiento del procesador ni colapsar OBS.
-* * **Inicio en un clic:** Incluye ejecutable `.bat` para usuarios sin experiencia en programación.
+* ** Incluye ejecutable `.bat` para usuarios sin experiencia en programación.
 
 ---
 
