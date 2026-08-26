@@ -4,10 +4,10 @@ import pyvirtualcam
 import time
 from ultralytics import YOLO
 
-# Índice de tu cámara
+# Configuración de cámara
 CAMARA_INDEX = 1
 
-# Cargar el modelo de segmentación de YOLOv8
+# Cargar modelo YOLOv8
 model = YOLO("yolov8n-seg.pt")
 
 cap = cv2.VideoCapture(CAMARA_INDEX, cv2.CAP_DSHOW)
@@ -18,15 +18,18 @@ width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)) or 640
 height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) or 480
 fps = 30
 
-# Variable inicial para el desenfoque (debe ser IMPAR)
-blur_level = 55  
+# Nivel de desenfoque inicial (Porcentaje de 0 a 100)
+blur_percent = 50  
+show_preview = True  # Estado de la ventana emergente
 
-print("Transmitiendo desenfoque filtrado a la Cámara Virtual...")
+print("Transmitiendo desenfoque a la Cámara Virtual...")
 print("-----------------------------------------------------")
-print("CONTROLES EN LA VENTANA DE VISTA PREVIA:")
-print("  [ + ] / [ - ] : Aumentar desenfoque")
-print("  [ - ]         : Disminuir desenfoque")
-print("  [ Q ]         : Salir del programa")
+print("CONTROLES:")
+print("  [ + ] / [ -] : Aumentar desenfoque (+10%)")
+print("  [ - ]         : Disminuir desenfoque (-10%)")
+print("  [ Q ]         : Ocultar ventana de vista previa (Ahorra recursos)")
+print("  [ V ]         : Reabrir ventana de vista previa")
+print("  [ Ctrl + C ]  : Detener script por completo")
 print("-----------------------------------------------------")
 
 with pyvirtualcam.Camera(width=width, height=height, fps=fps, fmt=pyvirtualcam.PixelFormat.BGR) as cam:
@@ -37,19 +40,26 @@ with pyvirtualcam.Camera(width=width, height=height, fps=fps, fmt=pyvirtualcam.P
         if not ret or frame is None:
             continue
 
-        # Aplicar desenfoque dinámico usando blur_level
-        blurred_frame = cv2.GaussianBlur(frame, (blur_level, blur_level), 0)
+        # Convertir el porcentaje (0 a 100) a un Kernel impar de OpenCV (1 a 151)
+        kernel_size = int(1 + (blur_percent / 100.0) * 150)
+        if kernel_size % 2 == 0:
+            kernel_size += 1
 
-        # Inferencia detectando personas (clase 0) optimizada a 320px
+        # Si el porcentaje es 0, no aplicamos desenfoque (usamos el frame original)
+        if blur_percent == 0:
+            blurred_frame = frame.copy()
+        else:
+            blurred_frame = cv2.GaussianBlur(frame, (kernel_size, kernel_size), 0)
+
+        # Inferencia con IA optimizada a 320px
         results = model(frame, classes=[0], imgsz=320, verbose=False)
-
         mask_3d = np.zeros((height, width, 3), dtype=np.float32)
 
         if results and len(results[0]) > 0 and results[0].masks is not None:
             boxes = results[0].boxes.xywh.cpu().numpy()
             masks = results[0].masks.data.cpu().numpy()
             
-            # FILTRO: Seleccionar la persona con el área más grande
+            # Persona en primer plano (área más grande)
             areas = [w * h for x, y, w, h in boxes]
             max_idx = np.argmax(areas)
             
@@ -59,30 +69,39 @@ with pyvirtualcam.Camera(width=width, height=height, fps=fps, fmt=pyvirtualcam.P
 
         final_output = (frame * mask_3d + blurred_frame * (1.0 - mask_3d)).astype(np.uint8)
 
-        # Dibujar el nivel actual en la pantalla para guiarnos
-        cv2.putText(final_output, f"Desenfoque: {blur_level}", (10, 30),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
-
+        # Enviar imagen procesada a OBS
         cam.send(final_output)
 
-        # Mostrar ventana interactiva
-        cv2.imshow("JL-VirtualCam-IA (Controles)", final_output)
-
-        # Capturar teclas presionadas
-        key = cv2.waitKey(1) & 0xFF
-        
-        # Subir desenfoque con '+' o '=' (Aumenta de 10 en 10, máx 151)
-        if key == ord('+') or key == ord('='):
-            blur_level = min(151, blur_level + 10)
+        # LÓGICA DE LA VENTANA DE VISTA PREVIA
+        if show_preview:
+            # Dibujar el indicador del 0 al 100%
+            preview_frame = final_output.copy()
+            cv2.putText(preview_frame, f"Desenfoque: {blur_percent}%", (10, 30),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
             
-        # Bajar desenfoque con '-' (Baja de 10 en 10, mín 3)
-        elif key == ord('-'):
-            blur_level = max(3, blur_level - 10)
-            
-        # Salir presionando 'q'
-        elif key == ord('q'):
-            break
+            cv2.imshow("JL-VirtualCam-IA (Vista Previa)", preview_frame)
+            key = cv2.waitKey(1) & 0xFF
 
+            # Aumentar desenfoque de 10 en 10 (máx 100)
+            if key == ord('+') or key == ord('='):
+                blur_percent = min(100, blur_percent + 10)
+                
+            # Disminuir desenfoque de 10 en 10 (mín 0)
+            elif key == ord('-'):
+                blur_percent = max(0, blur_percent - 10)
+                
+            # Oprimir Q: Cierra la ventana emergente y libera recursos
+            elif key == ord('q'):
+                show_preview = False
+                cv2.destroyAllWindows()
+
+        else:
+            # Si la ventana está oculta, revisamos rápidamente teclas globales
+            key = cv2.waitKey(1) & 0xFF
+            if key == ord('v'):
+                show_preview = True
+
+        # Sincronización de FPS
         elapsed_time = time.time() - start_time
         sleep_time = max(0, (1.0 / fps) - elapsed_time)
         time.sleep(sleep_time)
