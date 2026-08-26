@@ -5,54 +5,66 @@ import pyvirtualcam
 import time
 import keyboard
 from ultralytics import YOLO
+from pygrabber.dshow_graph import FilterGraph
 
-def listar_camaras_disponibles():
-    """Prueba índices de cámara y devuelve una lista con las disponibles."""
-    camaras = []
-    print("Buscando cámaras conectadas al sistema...")
-    # Probamos los primeros 5 índices posibles
-    for index in range(5):
-        cap_test = cv2.VideoCapture(index, cv2.CAP_DSHOW)
-        if cap_test.isOpened():
-            ret, _ = cap_test.read()
-            if ret:
-                camaras.append(index)
-            cap_test.release()
-    return camaras
+def obtener_camaras_con_nombres():
+    """Obtiene los nombres reales de las cámaras disponibles en Windows."""
+    try:
+        graph = FilterGraph()
+        dispositivos = graph.get_input_devices()
+        return dispositivos
+    except Exception:
+        # Respaldo por si ocurre algún fallo con DirectShow
+        return []
 
 def seleccionar_camara():
-    """Muestra un menú para que el usuario elija la cámara."""
-    camaras = listar_camaras_disponibles()
+    """Muestra un menú claro con el nombre real de cada cámara."""
+    nombres_camaras = obtener_camaras_con_nombres()
     
-    if not camaras:
-        print("❌ Error: No se detectó ninguna cámara conectada.")
-        input("Presiona Enter para salir...")
-        exit()
+    # Si por alguna razón no detectó nombres, probamos con OpenCV básico
+    if not nombres_camaras:
+        print("Buscando cámaras conectadas al sistema...")
+        camaras_validas = []
+        for index in range(5):
+            cap_test = cv2.VideoCapture(index, cv2.CAP_DSHOW)
+            if cap_test.isOpened():
+                ret, _ = cap_test.read()
+                if ret:
+                    camaras_validas.append((index, f"Cámara en índice {index}"))
+                cap_test.release()
         
-    if len(camaras) == 1:
-        print(f"✔️ Se detectó 1 cámara (Índice {camaras[0]}). Seleccionada automáticamente.\n")
+        if not camaras_validas:
+            print("❌ Error: No se detectó ninguna cámara conectada.")
+            input("Presiona Enter para salir...")
+            exit()
+        return camaras_validas[0][0], camaras_validas[0][1]
+
+    # Si solo hay 1 cámara detectada
+    if len(nombres_camaras) == 1:
+        print(f"✔️ Cámara detectada: {nombres_camaras[0]}. Seleccionada automáticamente.\n")
         time.sleep(1)
-        return camaras[0]
-        
+        return 0, nombres_camaras[0]
+
+    # Si hay múltiples cámaras (webcam, USB, OBS Virtual Cam, etc.)
     print("\n=====================================================")
     print("        CÁMARAS DETECTADAS EN EL SISTEMA             ")
     print("=====================================================")
-    for idx in camaras:
-        print(f"  [ {idx} ] -> Cámara Índice {idx}")
+    for idx, nombre in enumerate(nombres_camaras):
+        print(f"  [ {idx} ] -> {nombre}")
     print("=====================================================")
     
     while True:
         try:
             opcion = int(input("Selecciona el número de la cámara que deseas usar: "))
-            if opcion in camaras:
-                return opcion
+            if 0 <= opcion < len(nombres_camaras):
+                return opcion, nombres_camaras[opcion]
             else:
                 print("Opción no válida. Elige un número de la lista.")
         except ValueError:
             print("Por favor, ingresa un número válido.")
 
-# Selección dinámica de la cámara
-CAMARA_INDEX = seleccionar_camara()
+# Selección dinámica de la cámara con nombre real
+CAMARA_INDEX, NOMBRE_CAMARA = seleccionar_camara()
 
 # Cargar modelo YOLOv8
 model = YOLO("yolov8n-seg.pt")
@@ -69,7 +81,7 @@ blur_percent = 50
 show_preview = True  
 last_key_time = 0
 
-def mostrar_interfaz(nivel, vista_previa, idx_camara):
+def mostrar_interfaz(nivel, vista_previa, nombre_camara):
     """Limpia la terminal y muestra un panel interactivo ordenado."""
     os.system('cls' if os.name == 'nt' else 'clear')
     
@@ -81,19 +93,19 @@ def mostrar_interfaz(nivel, vista_previa, idx_camara):
     print("=====================================================")
     print("        JL-VirtualCam-IA | PANEL DE CONTROL          ")
     print("=====================================================")
-    print(f" CÁMARA ACTIVA:      Índice {idx_camara}")
+    print(f" CÁMARA ACTIVA:      {nombre_camara}")
     print(f" NIVEL DE DESENFOQUE: [{barra}] {nivel}%")
     print(f" VISTA PREVIA:       {estado_vista}")
     print("-----------------------------------------------------")
     print(" CONTROLES GLOBALES:")
-    print("   [ + ] / [ = ] : Aumentar desenfoque (+10%)")
+    print("   [ + ] / [ - ] : Aumentar desenfoque (+10%)")
     print("   [ - ]         : Disminuir desenfoque (-10%)")
     print("   [ Q ]         : Mostrar / Ocultar Vista Previa")
     print("   [ Ctrl + C ]  : Detener programa")
     print("=====================================================")
 
 # Imprimir la interfaz inicial
-mostrar_interfaz(blur_percent, show_preview, CAMARA_INDEX)
+mostrar_interfaz(blur_percent, show_preview, NOMBRE_CAMARA)
 
 NOMBRE_VENTANA = "JL-VirtualCam-IA (Controles)"
 
@@ -158,7 +170,7 @@ try:
                     last_key_time = current_time
 
                 if hubo_cambio:
-                    mostrar_interfaz(blur_percent, show_preview, CAMARA_INDEX)
+                    mostrar_interfaz(blur_percent, show_preview, NOMBRE_CAMARA)
 
             # VISTA PREVIA
             if show_preview:
