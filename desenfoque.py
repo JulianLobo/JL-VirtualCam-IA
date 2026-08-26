@@ -24,7 +24,7 @@ blur_level = 55
 print("Transmitiendo desenfoque filtrado a la Cámara Virtual...")
 print("-----------------------------------------------------")
 print("CONTROLES EN LA VENTANA DE VISTA PREVIA:")
-print("  [ + ] / [ = ] : Aumentar desenfoque")
+print("  [ + ] / [ - ] : Aumentar desenfoque")
 print("  [ - ]         : Disminuir desenfoque")
 print("  [ Q ]         : Salir del programa")
 print("-----------------------------------------------------")
