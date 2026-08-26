@@ -30,7 +30,7 @@ with pyvirtualcam.Camera(width=width, height=height, fps=fps, fmt=pyvirtualcam.P
         blurred_frame = cv2.GaussianBlur(frame, (55, 55), 0)
 
         # Inferencia detectando personas (clase 0)
-        results = model(frame, classes=[0], verbose=False)
+        results = model(frame, classes=[0], imgsz=320, verbose=False)
 
         mask_3d = np.zeros((height, width, 3), dtype=np.float32)
 
