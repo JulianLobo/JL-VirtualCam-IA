@@ -11,17 +11,14 @@ def obtener_camaras_con_nombres():
     """Obtiene los nombres reales de las cámaras disponibles en Windows."""
     try:
         graph = FilterGraph()
-        dispositivos = graph.get_input_devices()
-        return dispositivos
+        return graph.get_input_devices()
     except Exception:
-        # Respaldo por si ocurre algún fallo con DirectShow
         return []
 
 def seleccionar_camara():
     """Muestra un menú claro con el nombre real de cada cámara."""
     nombres_camaras = obtener_camaras_con_nombres()
     
-    # Si por alguna razón no detectó nombres, probamos con OpenCV básico
     if not nombres_camaras:
         print("Buscando cámaras conectadas al sistema...")
         camaras_validas = []
@@ -39,13 +36,11 @@ def seleccionar_camara():
             exit()
         return camaras_validas[0][0], camaras_validas[0][1]
 
-    # Si solo hay 1 cámara detectada
     if len(nombres_camaras) == 1:
         print(f"✔️ Cámara detectada: {nombres_camaras[0]}. Seleccionada automáticamente.\n")
         time.sleep(1)
         return 0, nombres_camaras[0]
 
-    # Si hay múltiples cámaras (webcam, USB, OBS Virtual Cam, etc.)
     print("\n=====================================================")
     print("        CÁMARAS DETECTADAS EN EL SISTEMA             ")
     print("=====================================================")
@@ -63,7 +58,7 @@ def seleccionar_camara():
         except ValueError:
             print("Por favor, ingresa un número válido.")
 
-# Selección dinámica de la cámara con nombre real
+# Selección de cámara
 CAMARA_INDEX, NOMBRE_CAMARA = seleccionar_camara()
 
 # Cargar modelo YOLOv8
@@ -81,13 +76,12 @@ blur_percent = 50
 show_preview = True  
 last_key_time = 0
 
-def mostrar_interfaz(nivel, vista_previa, nombre_camara):
+def mostrar_interfaz_consola(nivel, vista_previa, nombre_camara):
     """Limpia la terminal y muestra un panel interactivo ordenado."""
     os.system('cls' if os.name == 'nt' else 'clear')
     
     bloques = int(nivel / 10)
     barra = "█" * bloques + "░" * (10 - bloques)
-    
     estado_vista = "ACTIVADA" if vista_previa else "OCULTA (Ahorro de recursos)"
     
     print("=====================================================")
@@ -104,10 +98,53 @@ def mostrar_interfaz(nivel, vista_previa, nombre_camara):
     print("   [ Ctrl + C ]  : Detener programa")
     print("=====================================================")
 
-# Imprimir la interfaz inicial
-mostrar_interfaz(blur_percent, show_preview, NOMBRE_CAMARA)
+def aplicar_diseno_emergente(frame, nivel_blur, nombre_cam, fps_real):
+    """Aplica una capa de interfaz gráfica estilizada (HUD) sobre el video."""
+    h, w, _ = frame.shape
+    overlay = frame.copy()
 
-NOMBRE_VENTANA = "JL-VirtualCam-IA (Controles)"
+    # 1. Borde exterior Neón (Azul/Cian)
+    cv2.rectangle(frame, (0, 0), (w - 1, h - 1), (235, 206, 135), 2)
+
+    # 2. Header Superior Oscuro
+    cv2.rectangle(overlay, (0, 0), (w, 40), (20, 20, 20), -1)
+    
+    # 3. Tarjeta Inferior de Estado
+    cv2.rectangle(overlay, (10, h - 65), (w - 10, h - 10), (25, 25, 25), -1)
+
+    # Aplicar transparencia (Blending) para las barras oscuras
+    cv2.addWeighted(overlay, 0.7, frame, 0.3, 0, frame)
+
+    # 4. Texto Header: Título + Estado Rec
+    cv2.putText(frame, "JL-VirtualCam IA", (15, 26), 
+                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 1, cv2.LINE_AA)
+    
+    cv2.circle(frame, (w - 100, 20), 5, (0, 0, 255), -1)  # Punto rojo REC
+    cv2.putText(frame, "EN VIVO", (w - 88, 25), 
+                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1, cv2.LINE_AA)
+
+    # 5. Texto Tarjeta Inferior
+    # Línea 1: Nivel de desenfoque y FPS
+    cv2.putText(frame, f"Blur: {nivel_blur}%", (25, h - 40), 
+                cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 127), 2, cv2.LINE_AA)
+    
+    cv2.putText(frame, f"FPS: {fps_real}", (160, h - 40), 
+                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
+
+    # Línea 2: Nombre de la Cámara activa
+    cam_corta = nombre_cam if len(nombre_cam) < 35 else nombre_cam[:32] + "..."
+    cv2.putText(frame, f"Camara: {cam_corta}", (25, h - 20), 
+                cv2.FONT_HERSHEY_SIMPLEX, 0.45, (180, 180, 180), 1, cv2.LINE_AA)
+
+    return frame
+
+mostrar_interfaz_consola(blur_percent, show_preview, NOMBRE_CAMARA)
+NOMBRE_VENTANA = "JL-VirtualCam-IA (Vista Previa)"
+
+# Variables para cálculo de FPS
+fps_count = 0
+fps_mostrar = 30
+last_fps_time = time.time()
 
 try:
     with pyvirtualcam.Camera(width=width, height=height, fps=fps, fmt=pyvirtualcam.PixelFormat.BGR) as cam:
@@ -144,8 +181,15 @@ try:
 
             final_output = (frame * mask_3d + blurred_frame * (1.0 - mask_3d)).astype(np.uint8)
 
-            # Transmitir a la Cámara Virtual
+            # Transmitir el cuadro limpio a la Cámara Virtual (Sin la interfaz dibujada)
             cam.send(final_output)
+
+            # Medidor de FPS
+            fps_count += 1
+            if time.time() - last_fps_time >= 1.0:
+                fps_mostrar = fps_count
+                fps_count = 0
+                last_fps_time = time.time()
 
             # CONTROL DE TECLAS
             current_time = time.time()
@@ -170,13 +214,13 @@ try:
                     last_key_time = current_time
 
                 if hubo_cambio:
-                    mostrar_interfaz(blur_percent, show_preview, NOMBRE_CAMARA)
+                    mostrar_interfaz_consola(blur_percent, show_preview, NOMBRE_CAMARA)
 
-            # VISTA PREVIA
+            # MOSTRAR VISTA PREVIA CON DISEÑO PERSONALIZADO
             if show_preview:
                 preview_frame = final_output.copy()
-                cv2.putText(preview_frame, f"Desenfoque: {blur_percent}%", (10, 30),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
+                # Aplicar la interfaz tipo HUD
+                preview_frame = aplicar_diseno_emergente(preview_frame, blur_percent, NOMBRE_CAMARA, fps_mostrar)
                 cv2.imshow(NOMBRE_VENTANA, preview_frame)
                 cv2.waitKey(1)
 
