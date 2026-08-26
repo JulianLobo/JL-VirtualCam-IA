@@ -20,17 +20,24 @@ fps = 30
 
 # Nivel de desenfoque inicial (Porcentaje de 0 a 100)
 blur_percent = 50  
-show_preview = True  # Estado de la ventana emergente
+show_preview = True  # Estado de la vista previa
 
 print("Transmitiendo desenfoque a la Cámara Virtual...")
 print("-----------------------------------------------------")
-print("CONTROLES:")
-print("  [ + ] / [ -] : Aumentar desenfoque (+10%)")
+print("CONTROLES EN LA VENTANA:")
+print("  [ + ] / [ - ] : Aumentar desenfoque (+10%)")
 print("  [ - ]         : Disminuir desenfoque (-10%)")
-print("  [ Q ]         : Ocultar ventana de vista previa (Ahorra recursos)")
-print("  [ V ]         : Reabrir ventana de vista previa")
-print("  [ Ctrl + C ]  : Detener script por completo")
+print("  [ Q ]         : Alternar (Ocultar / Mostrar) vista previa")
+print("  [ Ctrl + C ]  : Detener script por completo desde la consola")
 print("-----------------------------------------------------")
+
+NOMBRE_VENTANA = "JL-VirtualCam-IA (Controles)"
+cv2.namedWindow(NOMBRE_VENTANA, cv2.WINDOW_AUTOSIZE)
+
+# Crear una imagen negra ligera para cuando la vista previa esté en modo "Ahorro"
+black_frame = np.zeros((150, 400, 3), dtype=np.uint8)
+cv2.putText(black_frame, "Modo Ahorro Activo", (20, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+cv2.putText(black_frame, "Presiona 'Q' para mostrar", (20, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
 
 with pyvirtualcam.Camera(width=width, height=height, fps=fps, fmt=pyvirtualcam.PixelFormat.BGR) as cam:
     while cap.isOpened():
@@ -45,13 +52,13 @@ with pyvirtualcam.Camera(width=width, height=height, fps=fps, fmt=pyvirtualcam.P
         if kernel_size % 2 == 0:
             kernel_size += 1
 
-        # Si el porcentaje es 0, no aplicamos desenfoque (usamos el frame original)
+        # Aplicar desenfoque
         if blur_percent == 0:
             blurred_frame = frame.copy()
         else:
             blurred_frame = cv2.GaussianBlur(frame, (kernel_size, kernel_size), 0)
 
-        # Inferencia con IA optimizada a 320px
+        # Inferencia con IA
         results = model(frame, classes=[0], imgsz=320, verbose=False)
         mask_3d = np.zeros((height, width, 3), dtype=np.float32)
 
@@ -59,7 +66,6 @@ with pyvirtualcam.Camera(width=width, height=height, fps=fps, fmt=pyvirtualcam.P
             boxes = results[0].boxes.xywh.cpu().numpy()
             masks = results[0].masks.data.cpu().numpy()
             
-            # Persona en primer plano (área más grande)
             areas = [w * h for x, y, w, h in boxes]
             max_idx = np.argmax(areas)
             
@@ -69,37 +75,29 @@ with pyvirtualcam.Camera(width=width, height=height, fps=fps, fmt=pyvirtualcam.P
 
         final_output = (frame * mask_3d + blurred_frame * (1.0 - mask_3d)).astype(np.uint8)
 
-        # Enviar imagen procesada a OBS
+        # Enviar siempre el cuadro procesado a la Cámara Virtual de OBS
         cam.send(final_output)
 
-        # LÓGICA DE LA VENTANA DE VISTA PREVIA
+        # GESTIÓN DE LA VENTANA Y TECLAS
         if show_preview:
-            # Dibujar el indicador del 0 al 100%
             preview_frame = final_output.copy()
             cv2.putText(preview_frame, f"Desenfoque: {blur_percent}%", (10, 30),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 255, 0), 2)
-            
-            cv2.imshow("JL-VirtualCam-IA (Vista Previa)", preview_frame)
-            key = cv2.waitKey(1) & 0xFF
-
-            # Aumentar desenfoque de 10 en 10 (máx 100)
-            if key == ord('+') or key == ord('='):
-                blur_percent = min(100, blur_percent + 10)
-                
-            # Disminuir desenfoque de 10 en 10 (mín 0)
-            elif key == ord('-'):
-                blur_percent = max(0, blur_percent - 10)
-                
-            # Oprimir Q: Cierra la ventana emergente y libera recursos
-            elif key == ord('q'):
-                show_preview = False
-                cv2.destroyAllWindows()
-
+            cv2.imshow(NOMBRE_VENTANA, preview_frame)
         else:
-            # Si la ventana está oculta, revisamos rápidamente teclas globales
-            key = cv2.waitKey(1) & 0xFF
-            if key == ord('v'):
-                show_preview = True
+            # En modo ahorro muestra un recuadro pequeño negro sin procesar renderizado pesado
+            cv2.imshow(NOMBRE_VENTANA, black_frame)
+
+        key = cv2.waitKey(1) & 0xFF
+
+        # Controles
+        if key == ord('+') or key == ord('='):
+            blur_percent = min(100, blur_percent + 10)
+        elif key == ord('-'):
+            blur_percent = max(0, blur_percent - 10)
+        elif key == ord('q'):
+            # Alternar estado al presionar Q
+            show_preview = not show_preview
 
         # Sincronización de FPS
         elapsed_time = time.time() - start_time
