@@ -1,11 +1,14 @@
+import os
 import cv2
 import numpy as np
 import pyvirtualcam
 import time
-import keyboard  # Captura teclas globales
+import keyboard
 from ultralytics import YOLO
 
 CAMARA_INDEX = 1
+
+# Cargar modelo YOLOv8
 model = YOLO("yolov8n-seg.pt")
 
 cap = cv2.VideoCapture(CAMARA_INDEX, cv2.CAP_DSHOW)
@@ -18,19 +21,35 @@ fps = 30
 
 blur_percent = 50  
 show_preview = True  
+last_key_time = 0
 
-print("Transmitiendo desenfoque a la Cámara Virtual...")
-print("-----------------------------------------------------")
-print("CONTROLES GLOBALES (Funcionan en cualquier ventana):")
-print("  [ + ] : Aumentar desenfoque (+10%)")
-print("  [ - ] : Disminuir desenfoque (-10%)")
-print("  [ Q ] : Abrir / Cerrar ventana de vista previa")
-print("-----------------------------------------------------")
+def mostrar_interfaz(nivel, vista_previa):
+    """Limpia la terminal y muestra un panel interactivo ordenado."""
+    os.system('cls' if os.name == 'nt' else 'clear')
+    
+    # Barra visual del nivel de desenfoque
+    bloques = int(nivel / 10)
+    barra = "█" * bloques + "░" * (10 - bloques)
+    
+    estado_vista = "ACTIVADA" if vista_previa else "OCULTA (Ahorro de recursos)"
+    
+    print("=====================================================")
+    print("        JL-VirtualCam-IA | PANEL DE CONTROL          ")
+    print("=====================================================")
+    print(f" NIVEL DE DESENFOQUE: [{barra}] {nivel}%")
+    print(f" VISTA PREVIA:       {estado_vista}")
+    print("-----------------------------------------------------")
+    print(" CONTROLES GLOBALES:")
+    print("   [ + ] / [ = ] : Aumentar desenfoque (+10%)")
+    print("   [ - ]         : Disminuir desenfoque (-10%)")
+    print("   [ Q ]         : Mostrar / Ocultar Vista Previa")
+    print("   [ Ctrl + C ]  : Detener programa")
+    print("=====================================================")
+
+# Imprimir la interfaz inicial
+mostrar_interfaz(blur_percent, show_preview)
 
 NOMBRE_VENTANA = "JL-VirtualCam-IA (Controles)"
-
-# Variables para evitar repetición rápida al mantener presionada la tecla
-last_key_time = 0
 
 with pyvirtualcam.Camera(width=width, height=height, fps=fps, fmt=pyvirtualcam.PixelFormat.BGR) as cam:
     while cap.isOpened():
@@ -40,7 +59,7 @@ with pyvirtualcam.Camera(width=width, height=height, fps=fps, fmt=pyvirtualcam.P
         if not ret or frame is None:
             continue
 
-        # Convertir porcentaje a tamaño de kernel impar
+        # Convertir porcentaje a kernel impar (1 a 151)
         kernel_size = int(1 + (blur_percent / 100.0) * 150)
         if kernel_size % 2 == 0:
             kernel_size += 1
@@ -50,7 +69,7 @@ with pyvirtualcam.Camera(width=width, height=height, fps=fps, fmt=pyvirtualcam.P
         else:
             blurred_frame = cv2.GaussianBlur(frame, (kernel_size, kernel_size), 0)
 
-        # IA Inferencia
+        # Inferencia con IA
         results = model(frame, classes=[0], imgsz=320, verbose=False)
         mask_3d = np.zeros((height, width, 3), dtype=np.float32)
 
@@ -66,26 +85,36 @@ with pyvirtualcam.Camera(width=width, height=height, fps=fps, fmt=pyvirtualcam.P
 
         final_output = (frame * mask_3d + blurred_frame * (1.0 - mask_3d)).astype(np.uint8)
 
+        # Transmitir a la Cámara Virtual
         cam.send(final_output)
 
-        # DETECCIÓN DE TECLAS GLOBALES (Antirrebote de 0.2 segundos)
+        # CONTROL DE TECLAS CON ACTUALIZACIÓN DE INTERFAZ
         current_time = time.time()
         if current_time - last_key_time > 0.2:
+            hubo_cambio = False
+            
             if keyboard.is_pressed('+') or keyboard.is_pressed('='):
-                blur_percent = min(100, blur_percent + 10)
-                print(f"Desenfoque: {blur_percent}%")
+                if blur_percent < 100:
+                    blur_percent += 10
+                    hubo_cambio = True
                 last_key_time = current_time
             elif keyboard.is_pressed('-'):
-                blur_percent = max(0, blur_percent - 10)
-                print(f"Desenfoque: {blur_percent}%")
+                if blur_percent > 0:
+                    blur_percent -= 10
+                    hubo_cambio = True
                 last_key_time = current_time
             elif keyboard.is_pressed('q'):
                 show_preview = not show_preview
                 if not show_preview:
                     cv2.destroyAllWindows()
+                hubo_cambio = True
                 last_key_time = current_time
 
-        # GESTIÓN DE VENTANA
+            # Solo refrescar la pantalla si el usuario interactuó
+            if hubo_cambio:
+                mostrar_interfaz(blur_percent, show_preview)
+
+        # GESTIÓN DE LA VENTANA DE VISTA PREVIA
         if show_preview:
             preview_frame = final_output.copy()
             cv2.putText(preview_frame, f"Desenfoque: {blur_percent}%", (10, 30),
@@ -93,6 +122,7 @@ with pyvirtualcam.Camera(width=width, height=height, fps=fps, fmt=pyvirtualcam.P
             cv2.imshow(NOMBRE_VENTANA, preview_frame)
             cv2.waitKey(1)
 
+        # Control de FPS
         elapsed_time = time.time() - start_time
         sleep_time = max(0, (1.0 / fps) - elapsed_time)
         time.sleep(sleep_time)
