@@ -36,7 +36,7 @@ with pyvirtualcam.Camera(width=width, height=height, fps=fps, fmt=pyvirtualcam.P
         mask_3d = np.zeros((height, width, 3), dtype=np.float32)
 
         if results and len(results[0]) > 0 and results[0].masks is not None:
-            boxes = results[0].boxes.xywh.cpu().numpy()ñ
+            boxes = results[0].boxes.xywh.cpu().numpy()
             masks = results[0].masks.data.cpu().numpy()
             
             # FILTRO: Seleccionar únicamente la persona con el área de caja más grande (tú en primer plano)
