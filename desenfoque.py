@@ -18,6 +18,7 @@ height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) or 480
 fps = 30
 
 print("Transmitiendo desenfoque filtrado a la Cámara Virtual...")
+print("Control + C para detener Cámara Virtual...")
 
 with pyvirtualcam.Camera(width=width, height=height, fps=fps, fmt=pyvirtualcam.PixelFormat.BGR) as cam:
     while cap.isOpened():
