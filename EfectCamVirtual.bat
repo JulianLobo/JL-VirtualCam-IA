@@ -1,12 +1,19 @@
 @echo off
 title JL-VirtualCam-IA - Modulo de Desenfoque
-cls
-
 echo ===================================================
-echo   Verificando librerias del sistema...
+echo Iniciando script de desenfoque... Por favor espere.
 echo ===================================================
-pip install -r requirements.txt >nul 2>&1
+echo.
 
-cls
-python desenfoque.py
-exit /b 0
+:: Navegar a la carpeta del proyecto
+cd /d "C:\Users\soporte7\Documents\lobo\Documento\GITHUB\JL-VirtualCam-IA"
+
+:: Ejecutar el script usando el ejecutor 'py' para evitar bloqueos
+py desenfoque.py
+
+:: Si ocurre un error, mantendrá la ventana abierta para ver el mensaje
+if %ERRORLEVEL% NEQ 0 (
+    echo.
+    echo Ocurrio un error al ejecutar el programa.
+    pause
+)
