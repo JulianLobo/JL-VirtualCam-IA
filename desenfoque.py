@@ -156,14 +156,25 @@ try:
                 continue
 
             # Convertir porcentaje a kernel impar (1 a 151)
-            kernel_size = int(1 + (blur_percent / 100.0) * 150)
-            if kernel_size % 2 == 0:
-                kernel_size += 1
-
+# --- OPTIMIZACIÓN DE DESENFOQUE (DOWNSCALING + BLUR) ---
             if blur_percent == 0:
                 blurred_frame = frame.copy()
             else:
-                blurred_frame = cv2.GaussianBlur(frame, (kernel_size, kernel_size), 0)
+                # 1. Reducir la imagen a 1/4 del tamaño original para aliviar el trabajo matemático
+                small_w, small_h = width // 4, height // 4
+                small_frame = cv2.resize(frame, (small_w, small_h), interpolation=cv2.INTER_NEAREST)
+                
+                # 2. Mantener un kernel pequeño y fijo (ej. 15x15 o máximo 31x31)
+                # Al estar reducida la imagen, un kernel pequeño se verá muy desenfocado
+                ksize = int(1 + (blur_percent / 100.0) * 30)
+                if ksize % 2 == 0:
+                    ksize += 1
+                
+                # 3. Aplicar desenfoque ultrarrápido en la imagen pequeña
+                blurred_small = cv2.GaussianBlur(small_frame, (ksize, ksize), 0)
+                
+                # 4. Redimensionar de vuelta a la resolución original
+                blurred_frame = cv2.resize(blurred_small, (width, height), interpolation=cv2.INTER_LINEAR)
 
             # Inferencia con IA
             results = model(frame, classes=[0], imgsz=320, verbose=False)
