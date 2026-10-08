@@ -1,5 +1,6 @@
 import os
 import cv2
+import glob
 import numpy as np
 import pyvirtualcam
 import time
@@ -64,7 +65,7 @@ def seleccionar_modo_inicial():
     print("        SELECCIONA EL EFECTO DE FONDO                ")
     print("=====================================================")
     print("  [ 1 ] -> Desenfoque de Fondo (0% a 100%)")
-    print("  [ 2 ] -> Imagen de Fondo Virtual (fondo.jpg)")
+    print("  [ 2 ] -> Galería de Fondos Virtuales (Carpeta 'fondos')")
     print("=====================================================")
     
     while True:
@@ -75,6 +76,35 @@ def seleccionar_modo_inicial():
             return 'image'
         else:
             print("Opción no válida. Ingresa 1 o 2.")
+
+def cargar_fondos_galeria(ruta_carpeta="fondos", ancho=640, alto=480):
+    """Carga todas las imágenes de la carpeta fondos redimensionadas."""
+    extensiones = ('*.jpg', '*.jpeg', '*.png', '*.webp')
+    archivos_unicos = set()
+    
+    if os.path.exists(ruta_carpeta):
+        for ext in extensiones:
+            archivos_unicos.update(glob.glob(os.path.join(ruta_carpeta, ext)))
+            archivos_unicos.update(glob.glob(os.path.join(ruta_carpeta, ext.upper())))
+    
+    archivos = sorted(list(archivos_unicos))
+    
+    imagenes = []
+    nombres = []
+    
+    for archivo in archivos:
+        img = cv2.imread(archivo)
+        if img is not None:
+            img_resized = cv2.resize(img, (ancho, alto))
+            imagenes.append(img_resized)
+            nombres.append(os.path.basename(archivo))
+            
+    # Si no hay fondos, se genera una imagen negra de respaldo
+    if not imagenes:
+        imagenes.append(np.zeros((alto, ancho, 3), dtype=np.uint8))
+        nombres.append("Sin fondos (Imagen Negra)")
+        
+    return imagenes, nombres
 
 # Configuración Inicial
 CAMARA_INDEX, NOMBRE_CAMARA = seleccionar_camara()
@@ -91,24 +121,20 @@ width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH)) or 640
 height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT)) or 480
 fps = 30
 
-# Cargar imagen de fondo si existe
-RUTA_FONDO = "fondo.jpg"
-if os.path.exists(RUTA_FONDO):
-    bg_image = cv2.imread(RUTA_FONDO)
-    bg_image = cv2.resize(bg_image, (width, height))
-else:
-    bg_image = np.zeros((height, width, 3), dtype=np.uint8)
+# Cargar Galería de Fondos
+lista_fondos, nombres_fondos = cargar_fondos_galeria("fondos", width, height)
+indice_fondo_activo = 0
 
-blur_percent = 50  
+blur_percent = 10  
 show_preview = True  
 last_key_time = 0
 
-def mostrar_interfaz_consola(modo, nivel_blur, vista_previa, nombre_camara):
+def mostrar_interfaz_consola(modo, nivel_blur, vista_previa, nombre_camara, nombre_fondo_actual, idx_fondo, total_fondos):
     """Limpia la terminal y muestra el panel de control activo."""
     os.system('cls' if os.name == 'nt' else 'clear')
     
     estado_vista = "ACTIVADA" if vista_previa else "OCULTA (Ahorro de recursos)"
-    texto_modo = "DESENFOQUE DE FONDO" if modo == 'blur' else "IMAGEN DE FONDO VIRTUAL"
+    texto_modo = "DESENFOQUE DE FONDO" if modo == 'blur' else "GALERÍA DE FONDO VIRTUAL"
     
     print("=====================================================")
     print("        JL-VirtualCam-IA | PANEL DE CONTROL          ")
@@ -121,7 +147,7 @@ def mostrar_interfaz_consola(modo, nivel_blur, vista_previa, nombre_camara):
         barra = "█" * bloques + "░" * (10 - bloques)
         print(f" NIVEL DE DESENFOQUE: [{barra}] {nivel_blur}%")
     else:
-        print(f" IMAGEN ARCHIVO:     {RUTA_FONDO if os.path.exists(RUTA_FONDO) else 'Sin archivo (Fondo Negro)'}")
+        print(f" FONDO ACTIVO:       [{idx_fondo + 1}/{total_fondos}] {nombre_fondo_actual}")
         
     print(f" VISTA PREVIA:       {estado_vista}")
     print("-----------------------------------------------------")
@@ -130,11 +156,13 @@ def mostrar_interfaz_consola(modo, nivel_blur, vista_previa, nombre_camara):
     if modo == 'blur':
         print("   [ + ] / [ = ] : Aumentar desenfoque (+10%)")
         print("   [ - ]         : Disminuir desenfoque (-10%)")
-    print("   [ Q ]         : Mostrar / Ocultar Vista Previa")
+    else:
+        print("   [ ← ] / [ → ] : Cambiar fondo de la galería (o A / D)")
+    print("   [ H ]         : Mostrar / Ocultar Vista Previa")
     print("   [ Ctrl + C ]  : Detener programa")
     print("=====================================================")
 
-def aplicar_diseno_emergente(frame, modo, nivel_blur, nombre_cam, fps_real):
+def aplicar_diseno_emergente(frame, modo, nivel_blur, nombre_cam, fps_real, nombre_fondo, idx_fondo, total_fondos):
     """Aplica la capa de interfaz gráfica (HUD) sobre la vista previa."""
     h, w, _ = frame.shape
     overlay = frame.copy()
@@ -158,11 +186,15 @@ def aplicar_diseno_emergente(frame, modo, nivel_blur, nombre_cam, fps_real):
                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1, cv2.LINE_AA)
 
     # Información Tarjeta Inferior
-    info_modo = f"Blur: {nivel_blur}%" if modo == 'blur' else "Fondo: Imagen"
+    if modo == 'blur':
+        info_modo = f"Blur: {nivel_blur}%"
+    else:
+        info_modo = f"Fondo [{idx_fondo + 1}/{total_fondos}]: {nombre_fondo[:15]}"
+
     cv2.putText(frame, info_modo, (25, h - 40), 
                 cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 127), 2, cv2.LINE_AA)
     
-    cv2.putText(frame, f"FPS: {fps_real}", (170, h - 40), 
+    cv2.putText(frame, f"FPS: {fps_real}", (220, h - 40), 
                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1, cv2.LINE_AA)
 
     cam_corta = nombre_cam if len(nombre_cam) < 35 else nombre_cam[:32] + "..."
@@ -171,7 +203,7 @@ def aplicar_diseno_emergente(frame, modo, nivel_blur, nombre_cam, fps_real):
 
     return frame
 
-mostrar_interfaz_consola(modo_actual, blur_percent, show_preview, NOMBRE_CAMARA)
+mostrar_interfaz_consola(modo_actual, blur_percent, show_preview, NOMBRE_CAMARA, nombres_fondos[indice_fondo_activo], indice_fondo_activo, len(lista_fondos))
 NOMBRE_VENTANA = "JL-VirtualCam-IA (Vista Previa)"
 
 fps_count = 0
@@ -187,7 +219,7 @@ try:
             if not ret or frame is None:
                 continue
 
-            # Inferencia con IA para segmentación
+            # Inferencia con IA para segmentación (YOLOv8)
             results = model(frame, classes=[0], imgsz=320, verbose=False)
             mask_3d = np.zeros((height, width, 3), dtype=np.float32)
 
@@ -212,12 +244,12 @@ try:
                 else:
                     fondo_procesado = cv2.GaussianBlur(frame, (kernel_size, kernel_size), 0)
             else:
-                fondo_procesado = bg_image
+                fondo_procesado = lista_fondos[indice_fondo_activo]
 
             # Combinar persona con el fondo seleccionado
             final_output = (frame * mask_3d + fondo_procesado * (1.0 - mask_3d)).astype(np.uint8)
 
-            # Transmitir a OBS
+            # Transmitir a la cámara virtual de OBS
             cam.send(final_output)
 
             # Medidor FPS
@@ -227,16 +259,18 @@ try:
                 fps_count = 0
                 last_fps_time = time.time()
 
-            # CONTROL DE TECLAS
+            # CONTROL DE TECLAS GLOBALES
             current_time = time.time()
             if current_time - last_key_time > 0.2:
                 hubo_cambio = False
                 
-                # Tecla M: Alternar entre Desenfoque e Imagen
+                # Tecla M: Alternar entre Desenfoque e Imagen de Galería
                 if keyboard.is_pressed('m'):
                     modo_actual = 'image' if modo_actual == 'blur' else 'blur'
                     hubo_cambio = True
                     last_key_time = current_time
+                
+                # Controles de Desenfoque
                 elif modo_actual == 'blur' and (keyboard.is_pressed('+') or keyboard.is_pressed('=')):
                     if blur_percent < 100:
                         blur_percent += 10
@@ -247,7 +281,19 @@ try:
                         blur_percent -= 10
                         hubo_cambio = True
                     last_key_time = current_time
-                elif keyboard.is_pressed('q'):
+
+                # Navegación por la Galería de Fondos (Flecha derecha / D para avanzar, Flecha izquierda / A para retroceder)
+                elif modo_actual == 'image' and (keyboard.is_pressed('right') or keyboard.is_pressed('d')):
+                    indice_fondo_activo = (indice_fondo_activo + 1) % len(lista_fondos)
+                    hubo_cambio = True
+                    last_key_time = current_time
+                elif modo_actual == 'image' and (keyboard.is_pressed('left') or keyboard.is_pressed('a')):
+                    indice_fondo_activo = (indice_fondo_activo - 1) % len(lista_fondos)
+                    hubo_cambio = True
+                    last_key_time = current_time
+
+                # Tecla H: Vista Previa
+                elif keyboard.is_pressed('h'):
                     show_preview = not show_preview
                     if not show_preview:
                         cv2.destroyAllWindows()
@@ -255,12 +301,12 @@ try:
                     last_key_time = current_time
 
                 if hubo_cambio:
-                    mostrar_interfaz_consola(modo_actual, blur_percent, show_preview, NOMBRE_CAMARA)
+                    mostrar_interfaz_consola(modo_actual, blur_percent, show_preview, NOMBRE_CAMARA, nombres_fondos[indice_fondo_activo], indice_fondo_activo, len(lista_fondos))
 
             # VISTA PREVIA
             if show_preview:
                 preview_frame = final_output.copy()
-                preview_frame = aplicar_diseno_emergente(preview_frame, modo_actual, blur_percent, NOMBRE_CAMARA, fps_mostrar)
+                preview_frame = aplicar_diseno_emergente(preview_frame, modo_actual, blur_percent, NOMBRE_CAMARA, fps_mostrar, nombres_fondos[indice_fondo_activo], indice_fondo_activo, len(lista_fondos))
                 cv2.imshow(NOMBRE_VENTANA, preview_frame)
                 cv2.waitKey(1)
 
@@ -272,7 +318,7 @@ try:
 except KeyboardInterrupt:
     os.system('cls' if os.name == 'nt' else 'clear')
     print("=====================================================")
-    print("      Programa JL-VirtualCam-IA finalizado.          ")
+    print("     Programa JL-VirtualCam-IA finalizado.          ")
     print("=====================================================")
 
 finally:
