@@ -152,12 +152,12 @@ def mostrar_interfaz_consola(modo, nivel_blur, vista_previa, nombre_camara, nomb
     print(f" VISTA PREVIA:       {estado_vista}")
     print("-----------------------------------------------------")
     print(" CONTROLES GLOBALES:")
-    print("   [ M ]         : Cambiar entre Desenfoque e Imagen")
+    print("   [ P ]         : Cambiar entre Desenfoque e Imagen de Fondo")
     if modo == 'blur':
         print("   [ + ] / [ = ] : Aumentar desenfoque (+10%)")
         print("   [ - ]         : Disminuir desenfoque (-10%)")
     else:
-        print("   [ ← ] / [ → ] : Cambiar fondo de la galería (o A / D)")
+        print("   [ ← ] / [ → ] : Cambiar fondo de la galería")
     print("   [ H ]         : Mostrar / Ocultar Vista Previa")
     print("   [ Ctrl + C ]  : Detener programa")
     print("=====================================================")
@@ -264,8 +264,8 @@ try:
             if current_time - last_key_time > 0.2:
                 hubo_cambio = False
                 
-                # Tecla M: Alternar entre Desenfoque e Imagen de Galería
-                if keyboard.is_pressed('m'):
+                # Tecla P: Alternar entre Desenfoque e Imagen de Galería
+                if keyboard.is_pressed('p'):
                     modo_actual = 'image' if modo_actual == 'blur' else 'blur'
                     hubo_cambio = True
                     last_key_time = current_time
@@ -282,12 +282,12 @@ try:
                         hubo_cambio = True
                     last_key_time = current_time
 
-                # Navegación por la Galería de Fondos (Flecha derecha / D para avanzar, Flecha izquierda / A para retroceder)
-                elif modo_actual == 'image' and (keyboard.is_pressed('right') or keyboard.is_pressed('d')):
+                # Navegación por la Galería de Fondos ÚNICAMENTE con Flechas
+                elif modo_actual == 'image' and keyboard.is_pressed('right'):
                     indice_fondo_activo = (indice_fondo_activo + 1) % len(lista_fondos)
                     hubo_cambio = True
                     last_key_time = current_time
-                elif modo_actual == 'image' and (keyboard.is_pressed('left') or keyboard.is_pressed('a')):
+                elif modo_actual == 'image' and keyboard.is_pressed('left'):
                     indice_fondo_activo = (indice_fondo_activo - 1) % len(lista_fondos)
                     hubo_cambio = True
                     last_key_time = current_time
